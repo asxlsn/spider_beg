@@ -4,6 +4,9 @@ import json
 import time
 import random
 import os
+import hmac
+import hashlib
+from urllib.parse import quote_plus
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 
@@ -70,8 +73,14 @@ class XiaohongziAPI:
         return result
 
 
-def send_dingtalk(webhook_url, title, content):
-    """发送钉钉机器人通知"""
+def send_dingtalk(webhook_url, secret, title, content):
+    """发送钉钉机器人通知（带加签）"""
+    timestamp = str(round(time.time() * 1000))
+    string_to_sign = f"{timestamp}\n{secret}"
+    hmac_code = hmac.new(secret.encode('utf-8'), string_to_sign.encode('utf-8'), digestmod=hashlib.sha256).digest()
+    sign = quote_plus(base64.b64encode(hmac_code))
+    url = f"{webhook_url}&timestamp={timestamp}&sign={sign}"
+
     data = {
         "msgtype": "markdown",
         "markdown": {
@@ -79,7 +88,7 @@ def send_dingtalk(webhook_url, title, content):
             "text": content
         }
     }
-    requests.post(webhook_url, json=data)
+    requests.post(url, json=data)
 
 
 def load_seen_ids(filepath="seen_ids.json"):
@@ -105,6 +114,7 @@ if __name__ == "__main__":
 
     token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6Ijg4QUI3NTlGQzI3NDQ1NTdCQkMyQjkwQkMzQjdEMUY0IiwidXNlcm5hbWUiOiLluJjlpJbmtbfmo6AiLCJpYXQiOjE3Nzk1NDM3NjAsImV4cCI6MTc4MjEzNTc2MH0.HnXcpbewj2Q2YZAk7lmojZGAbIW_VmnN8T8MVG-MfZk"
     dingtalk_webhook = os.environ.get("DINGTALK_WEBHOOK", "")
+    dingtalk_secret = os.environ.get("DINGTALK_SECRET", "")
 
     api = XiaohongziAPI(token)
     result = api.get_orders(page=1)
@@ -114,7 +124,7 @@ if __name__ == "__main__":
     seen_ids = load_seen_ids()
     new_orders = [o for o in result_list if o.get("id") not in seen_ids]
 
-    if new_orders and dingtalk_webhook:
+    if new_orders and dingtalk_webhook and dingtalk_secret:
         # 构造钉钉消息
         lines = [f"## 新订单通知 ({len(new_orders)}条)\n"]
         for order in new_orders:
@@ -122,7 +132,7 @@ if __name__ == "__main__":
             lines.append(f"- 描述：{order.get('desc', '')}")
             lines.append(f"- 时间：{order.get('createTime', '')}\n")
             seen_ids.add(order.get("id"))
-        send_dingtalk(dingtalk_webhook, "新订单通知", "\n".join(lines))
+        send_dingtalk(dingtalk_webhook, dingtalk_secret, "新订单通知", "\n".join(lines))
         print(f"已推送 {len(new_orders)} 条新订单到钉钉")
     elif new_orders:
         print(f"发现 {len(new_orders)} 条新订单，但未配置钉钉 webhook")

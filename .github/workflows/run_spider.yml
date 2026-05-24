@@ -23,6 +23,7 @@ jobs:
       - name: Run spider
         env:
           DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+          DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
           SCHEDULED: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
         run: python yx_spider.py
 
