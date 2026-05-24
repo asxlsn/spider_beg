@@ -97,10 +97,11 @@ def save_seen_ids(seen_ids, filepath="seen_ids.json"):
 
 
 if __name__ == "__main__":
-    # 随机延迟0-60分钟，避免固定时间请求
-    delay = random.randint(0, 3600)
-    print(f"随机延迟 {delay} 秒后执行...")
-    time.sleep(delay)
+    # 定时触发时随机延迟，手动触发时跳过
+    if os.environ.get("SCHEDULED") == "true":
+        delay = random.randint(0, 3600)
+        print(f"随机延迟 {delay} 秒后执行...")
+        time.sleep(delay)
 
     token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6Ijg4QUI3NTlGQzI3NDQ1NTdCQkMyQjkwQkMzQjdEMUY0IiwidXNlcm5hbWUiOiLluJjlpJbmtbfmo6AiLCJpYXQiOjE3Nzk1NDM3NjAsImV4cCI6MTc4MjEzNTc2MH0.HnXcpbewj2Q2YZAk7lmojZGAbIW_VmnN8T8MVG-MfZk"
     dingtalk_webhook = os.environ.get("DINGTALK_WEBHOOK", "")
