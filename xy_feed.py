@@ -44,13 +44,14 @@ def get_sign(token, timestamp, app_key, data):
     return hashlib.md5(sign_str.encode('utf-8')).hexdigest()
 
 
-def fetch_feed(cookies, page_number=1, page_size=30):
-    """获取闲鱼首页推荐 feed"""
-    m_h5_tk = cookies["_m_h5_tk"]
-    token = m_h5_tk.split("_")[0]
+def build_feed_request(cookies, page_number=1, page_size=30):
+    """构造 feed 请求参数，返回 (params, post_data)"""
+    token = ""
+    if "_m_h5_tk" in cookies:
+        token = cookies["_m_h5_tk"].split("_")[0]
+
     timestamp = str(int(time.time() * 1000))
 
-    # 构造请求体
     data_obj = {
         "itemId": "",
         "pageSize": page_size,
@@ -59,7 +60,6 @@ def fetch_feed(cookies, page_number=1, page_size=30):
     }
     data_str = json.dumps(data_obj, separators=(',', ':'))
 
-    # 生成签名
     sign = get_sign(token, timestamp, app_key, data_str)
 
     params = {
@@ -78,15 +78,40 @@ def fetch_feed(cookies, page_number=1, page_size=30):
     }
 
     post_data = {"data": data_str}
+    return params, post_data
 
-    resp = requests.post(
-        url="https://h5api.m.goofish.com/h5/mtop.taobao.idlehome.home.webpc.feed/1.0/",
-        headers=headers,
-        cookies=cookies,
-        params=params,
-        data=post_data
-    )
-    return resp.json()
+
+def update_cookies_from_response(cookies, resp):
+    """从响应的 Set-Cookie 中提取新的 _m_h5_tk 和 _m_h5_tk_enc"""
+    for key in ("_m_h5_tk", "_m_h5_tk_enc"):
+        if key in resp.cookies:
+            cookies[key] = resp.cookies[key]
+
+
+def fetch_feed(cookies, page_number=1, page_size=30):
+    """获取闲鱼首页推荐 feed，自动处理 token 过期（两次请求机制）"""
+    url = "https://h5api.m.goofish.com/h5/mtop.taobao.idlehome.home.webpc.feed/1.0/"
+
+    params, post_data = build_feed_request(cookies, page_number, page_size)
+    resp = requests.post(url, headers=headers, cookies=cookies, params=params, data=post_data)
+
+    result = resp.json()
+    ret = result.get("ret", [])
+
+    # token 过期或缺失时，服务器返回错误但会在 Set-Cookie 中下发新 token
+    token_expired = any("TOKEN_EXOIRED" in r or "TOKEN_EMPTY" in r for r in ret)
+    if token_expired:
+        print("  token 过期/缺失，使用服务器下发的新 token 重试...")
+        update_cookies_from_response(cookies, resp)
+
+        # 用新 token 重新构造请求
+        params, post_data = build_feed_request(cookies, page_number, page_size)
+        resp = requests.post(url, headers=headers, cookies=cookies, params=params, data=post_data)
+        result = resp.json()
+
+    # 无论是否重试，都更新 cookie 中的 token（保持最新）
+    update_cookies_from_response(cookies, resp)
+    return result
 
 
 def extract_items(response_data):
@@ -246,9 +271,6 @@ if __name__ == "__main__":
         exit(1)
     cookies = parse_cookie_str(cookie_str)
 
-    if "_m_h5_tk" not in cookies:
-        print("错误: Cookie 中缺少 _m_h5_tk")
-        exit(1)
 
     dingtalk_webhook = os.environ.get("DINGTALK_WEBHOOK", "")
     dingtalk_secret = os.environ.get("DINGTALK_SECRET", "")
