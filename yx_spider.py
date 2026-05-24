@@ -1,6 +1,9 @@
 import requests
 import base64
 import json
+import time
+import random
+import os
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 
@@ -67,21 +70,66 @@ class XiaohongziAPI:
         return result
 
 
-# 使用示例
+def send_dingtalk(webhook_url, title, content):
+    """发送钉钉机器人通知"""
+    data = {
+        "msgtype": "markdown",
+        "markdown": {
+            "title": title,
+            "text": content
+        }
+    }
+    requests.post(webhook_url, json=data)
+
+
+def load_seen_ids(filepath="seen_ids.json"):
+    """加载已通知过的订单ID"""
+    if os.path.exists(filepath):
+        with open(filepath, "r") as f:
+            return set(json.load(f))
+    return set()
+
+
+def save_seen_ids(seen_ids, filepath="seen_ids.json"):
+    """保存已通知过的订单ID"""
+    with open(filepath, "w") as f:
+        json.dump(list(seen_ids), f)
+
+
 if __name__ == "__main__":
+    # 随机延迟0-60分钟，避免固定时间请求
+    delay = random.randint(0, 3600)
+    print(f"随机延迟 {delay} 秒后执行...")
+    time.sleep(delay)
+
     token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6Ijg4QUI3NTlGQzI3NDQ1NTdCQkMyQjkwQkMzQjdEMUY0IiwidXNlcm5hbWUiOiLluJjlpJbmtbfmo6AiLCJpYXQiOjE3Nzk1NDM3NjAsImV4cCI6MTc4MjEzNTc2MH0.HnXcpbewj2Q2YZAk7lmojZGAbIW_VmnN8T8MVG-MfZk"
+    dingtalk_webhook = os.environ.get("DINGTALK_WEBHOOK", "")
 
-    # 创建API实例
     api = XiaohongziAPI(token)
-
-    # 获取第2页数据
     result = api.get_orders(page=1)
-    result_list = result.get("record")
-    for order in result_list:
-        print(order.get("id"))
-        print(order.get("title"))
-        print(order.get("desc"))
-        print(order.get("createTime"))
-        print("*"*60)
+    result_list = result.get("record", [])
 
-    # print(json.dumps(result, indent=2, ensure_ascii=False))
+    # 加载已通知的订单ID
+    seen_ids = load_seen_ids()
+    new_orders = [o for o in result_list if o.get("id") not in seen_ids]
+
+    if new_orders and dingtalk_webhook:
+        # 构造钉钉消息
+        lines = [f"## 新订单通知 ({len(new_orders)}条)\n"]
+        for order in new_orders:
+            lines.append(f"**{order.get('title', '')}**\n")
+            lines.append(f"- 描述：{order.get('desc', '')}")
+            lines.append(f"- 时间：{order.get('createTime', '')}\n")
+            seen_ids.add(order.get("id"))
+        send_dingtalk(dingtalk_webhook, "新订单通知", "\n".join(lines))
+        print(f"已推送 {len(new_orders)} 条新订单到钉钉")
+    elif new_orders:
+        print(f"发现 {len(new_orders)} 条新订单，但未配置钉钉 webhook")
+        for order in new_orders:
+            print(f"  - {order.get('title')} | {order.get('createTime')}")
+            seen_ids.add(order.get("id"))
+    else:
+        print("没有新订单")
+
+    # 保存已通知的ID
+    save_seen_ids(seen_ids)
