@@ -111,6 +111,7 @@ def extract_items(response_data):
             "city": card_data.get("city", ""),
             "seller": user_info.get("userNick", ""),
             "wantCount": hot_point.get("text", ""),
+            "picUrl": detail.get("picUrl", ""),
         }
         items.append(item)
 
@@ -206,7 +207,11 @@ if __name__ == "__main__":
             for item in batch:
                 lines.append(f"**{item['title'][:40]}**\n")
                 lines.append(f"- 价格: {item['price']}元 | 城市: {item['city']}")
-                lines.append(f"- 卖家: {item['seller']} | {item['wantCount']}\n")
+                lines.append(f"- 卖家: {item['seller']} | {item['wantCount']}")
+                if item.get("picUrl"):
+                    lines.append(f"- ![商品图]({item['picUrl']})\n")
+                else:
+                    lines.append("")
             send_dingtalk(dingtalk_webhook, dingtalk_secret, "闲鱼新商品通知", "\n".join(lines))
             if i + 10 < len(new_items):
                 time.sleep(1)
