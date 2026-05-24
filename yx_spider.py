@@ -92,7 +92,7 @@ def send_dingtalk(webhook_url, secret, title, content):
 
 
 def load_seen_ids(filepath="seen_ids.json"):
-    """加载已通知过的订单ID"""
+    """加载上次推送过的订单ID"""
     if os.path.exists(filepath):
         with open(filepath, "r") as f:
             return set(json.load(f))
@@ -100,7 +100,7 @@ def load_seen_ids(filepath="seen_ids.json"):
 
 
 def save_seen_ids(seen_ids, filepath="seen_ids.json"):
-    """保存已通知过的订单ID"""
+    """保存本次订单ID"""
     with open(filepath, "w") as f:
         json.dump(list(seen_ids), f)
 
@@ -120,27 +120,28 @@ if __name__ == "__main__":
     result = api.get_orders(page=1)
     result_list = result.get("record", [])
 
-    # 加载已通知的订单ID
-    seen_ids = load_seen_ids()
-    new_orders = [o for o in result_list if o.get("id") not in seen_ids]
+    if not result_list:
+        print("没有获取到订单数据")
+    elif dingtalk_webhook and dingtalk_secret:
+        # 加载上次的订单ID，用于标注新增
+        prev_ids = load_seen_ids()
 
-    if new_orders and dingtalk_webhook and dingtalk_secret:
-        # 构造钉钉消息
-        lines = [f"## 新订单通知 ({len(new_orders)}条)\n"]
-        for order in new_orders:
-            lines.append(f"**{order.get('title', '')}**\n")
+        # 构造钉钉消息，全部订单都推送，新增的标注【新】
+        lines = [f"## 订单通知 (共{len(result_list)}条)\n"]
+        for order in result_list:
+            is_new = order.get("id") not in prev_ids
+            tag = "【新】" if is_new else ""
+            lines.append(f"**{tag}{order.get('title', '')}**\n")
             lines.append(f"- 描述：{order.get('desc', '')}")
             lines.append(f"- 时间：{order.get('createTime', '')}\n")
-            seen_ids.add(order.get("id"))
-        send_dingtalk(dingtalk_webhook, dingtalk_secret, "新订单通知", "\n".join(lines))
-        print(f"已推送 {len(new_orders)} 条新订单到钉钉")
-    elif new_orders:
-        print(f"发现 {len(new_orders)} 条新订单，但未配置钉钉 webhook")
-        for order in new_orders:
-            print(f"  - {order.get('title')} | {order.get('createTime')}")
-            seen_ids.add(order.get("id"))
-    else:
-        print("没有新订单")
 
-    # 保存已通知的ID
-    save_seen_ids(seen_ids)
+        send_dingtalk(dingtalk_webhook, dingtalk_secret, "订单通知", "\n".join(lines))
+        print(f"已推送 {len(result_list)} 条订单到钉钉")
+
+        # 保存本次所有订单ID
+        current_ids = {o.get("id") for o in result_list}
+        save_seen_ids(current_ids)
+    else:
+        print("未配置钉钉 webhook 或 secret，仅打印：")
+        for order in result_list:
+            print(f"  - {order.get('title')} | {order.get('desc')} | {order.get('createTime')}")
