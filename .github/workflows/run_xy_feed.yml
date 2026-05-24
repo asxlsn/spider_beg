@@ -26,6 +26,7 @@ jobs:
           XY_COOKIE: ${{ secrets.XY_COOKIE }}
           DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
           DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
+          SCHEDULED: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
         run: python xy_feed.py
 
       - name: Save state

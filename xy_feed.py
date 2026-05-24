@@ -146,10 +146,11 @@ def send_dingtalk(webhook_url, secret, title, content):
 
 
 if __name__ == "__main__":
-    # 随机延迟1-60分钟
-    delay = random.randint(60, 3600)
-    print(f"随机延迟 {delay} 秒后执行...")
-    time.sleep(delay)
+    # 定时触发时随机延迟1-60分钟，手动触发跳过
+    if os.environ.get("SCHEDULED") == "true":
+        delay = random.randint(60, 3600)
+        print(f"随机延迟 {delay} 秒后执行...")
+        time.sleep(delay)
 
     # 从环境变量读取 cookie 字符串
     cookie_str = os.environ.get("XY_COOKIE", "")
