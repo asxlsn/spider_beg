@@ -27,26 +27,15 @@ headers = {
 
 app_key = "34839810"
 
-cookies = {
-    "t": "240ef3743639ad6bc74b0a06b6be5401",
-    "cna": "57lrIozHKE8BASQIglaSwrSS",
-    "xlly_s": "1",
-    "cookie2": "1167fa9989526a8057d3d671ec868a8d",
-    "mtop_partitioned_detect": "1",
-    "_m_h5_tk": "0242a4da38bbb6c18d6c038ba537022f_1779603267192",
-    "_m_h5_tk_enc": "59141f25fccf170aad48b8a490d1e56e",
-    "_samesite_flag_": "true",
-    "_tb_token_": "eb67453f3ee83",
-    "sdkSilent": "1779681748951",
-    "tracknick": "xy342894735481",
-    "unb": "2219105959387",
-    "sgcookie": "E100JxBVbb2wMJ%2BceGIBUaEYOJnKSnjMghIrr3FJyYCq%2FS1N1LGO5x2tbxMd60uVYN7CA2cJHRm0eswAbBPBLvPWDtC1PgnZ7WkorC6rdg4CRfGFzOxDxkghxf5Fy4pbZX7e",
-    "csg": "7aa65c53",
-    "havana_lgc2_77": "eyJoaWQiOjIyMTkxMDU5NTkzODcsInNnIjoiMGNkNTk5M2IzMDc0MjAwMjMyNWRjMzhmYzMxZGNiNTkiLCJzaXRlIjo3NywidG9rZW4iOiIxX2xQVE43Q0pnLTB6R0hWYXd3NmExUSJ9",
-    "_hvn_lgc_": "77",
-    "havana_lgc_exp": "1782187392260",
-    "tfstk": "gkwIKJ2l2eYCOssdyeSwcLAskYD50GW2F3i8mupe2vHpyUEx7yuELgXSyy0aL2rEpHVguopUL6DyFvDoeZ7V3trUxYDR6Dg4YHDtmmndUX3KBvmrq7Exutr3xhKByiPO3_GUxa9-yzhK6FnEWD3JeLIs6mo-ephJpCLtS0H-eb3-XCnr2LpppLI_XVm-eQpLyAIs4V3-eYU8Xjq15cfIJksl9G-ZALQ_YV9JeRiOrqEBxKn3BDTrukg1kp21IXgYvV9RRNSbV4ggHN5_jPPL8c45hNMTD5MKAzBvgVF_XJcqhsdQklz3hvefRpoZN2NTpftJelHi8bP7RwOnJWzsich9VtmauVE3p5skWkUqRvnt_tIbXbFaKj2FWpMYikkUwPB6drIrnKujx8AWfjvSfqS1fQAu6FlAWmR-WWlKjcyVfGTBZXnifqS1fQAo9cmZgGs6RQf.."
-}
+
+def parse_cookie_str(cookie_str):
+    """将 cookie 字符串解析为 dict"""
+    cookies = {}
+    for pair in cookie_str.split(";"):
+        if "=" in pair:
+            k, v = pair.strip().split("=", 1)
+            cookies[k] = v
+    return cookies
 
 
 def get_sign(token, timestamp, app_key, data):
@@ -55,9 +44,8 @@ def get_sign(token, timestamp, app_key, data):
     return hashlib.md5(sign_str.encode('utf-8')).hexdigest()
 
 
-def fetch_feed(page_number=1, page_size=30):
+def fetch_feed(cookies, page_number=1, page_size=30):
     """获取闲鱼首页推荐 feed"""
-    # 从 cookie 中提取 token
     m_h5_tk = cookies["_m_h5_tk"]
     token = m_h5_tk.split("_")[0]
     timestamp = str(int(time.time() * 1000))
@@ -158,6 +146,22 @@ def send_dingtalk(webhook_url, secret, title, content):
 
 
 if __name__ == "__main__":
+    # 随机延迟1-60分钟
+    delay = random.randint(60, 3600)
+    print(f"随机延迟 {delay} 秒后执行...")
+    time.sleep(delay)
+
+    # 从环境变量读取 cookie 字符串
+    cookie_str = os.environ.get("XY_COOKIE", "")
+    if not cookie_str:
+        print("错误: 未设置 XY_COOKIE 环境变量")
+        exit(1)
+    cookies = parse_cookie_str(cookie_str)
+
+    if "_m_h5_tk" not in cookies:
+        print("错误: Cookie 中缺少 _m_h5_tk")
+        exit(1)
+
     dingtalk_webhook = os.environ.get("DINGTALK_WEBHOOK", "")
     dingtalk_secret = os.environ.get("DINGTALK_SECRET", "")
 
@@ -166,7 +170,7 @@ if __name__ == "__main__":
 
     for page in range(1, total_pages + 1):
         print(f"正在获取第 {page} 页...")
-        resp_data = fetch_feed(page_number=page)
+        resp_data = fetch_feed(cookies, page_number=page)
 
         ret = resp_data.get("ret", [])
         if not any("SUCCESS" in r for r in ret):

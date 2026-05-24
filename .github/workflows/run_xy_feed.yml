@@ -2,7 +2,8 @@ name: Run xy_feed
 
 on:
   schedule:
-    - cron: '42 */6 * * *'
+    # 北京时间 9:00 / 17:00 / 次日1:00 (UTC 1:00 / 9:00 / 17:00)
+    - cron: '0 1,9,17 * * *'
   workflow_dispatch:
 
 jobs:
@@ -22,6 +23,7 @@ jobs:
 
       - name: Run spider
         env:
+          XY_COOKIE: ${{ secrets.XY_COOKIE }}
           DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
           DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
         run: python xy_feed.py
