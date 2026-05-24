@@ -208,6 +208,7 @@ if __name__ == "__main__":
                 lines.append(f"**{item['title'][:40]}**\n")
                 lines.append(f"- 价格: {item['price']}元 | 城市: {item['city']}")
                 lines.append(f"- 卖家: {item['seller']} | {item['wantCount']}")
+                lines.append(f"- [查看商品](https://www.goofish.com/item?id={item['itemId']})")
                 if item.get("picUrl"):
                     lines.append(f"- ![商品图]({item['picUrl']})\n")
                 else:
