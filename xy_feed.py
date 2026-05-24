@@ -119,15 +119,24 @@ def extract_items(response_data):
 
 
 def load_seen_ids(filepath="xy_seen_ids.json"):
+    """加载已推送记录，格式: {itemId: timestamp}"""
     if os.path.exists(filepath):
         with open(filepath, "r") as f:
-            return set(json.load(f))
-    return set()
+            data = json.load(f)
+            # 兼容旧格式（纯列表）
+            if isinstance(data, list):
+                return {item_id: time.time() for item_id in data}
+            return data
+    return {}
 
 
-def save_seen_ids(seen_ids, filepath="xy_seen_ids.json"):
+def save_seen_ids(seen_dict, filepath="xy_seen_ids.json"):
+    """保存已推送记录，自动清理超过3天的"""
+    now = time.time()
+    three_days = 3 * 24 * 3600
+    cleaned = {k: v for k, v in seen_dict.items() if now - v < three_days}
     with open(filepath, "w") as f:
-        json.dump(list(seen_ids), f)
+        json.dump(cleaned, f)
 
 
 def send_dingtalk(webhook_url, secret, title, content):
@@ -195,8 +204,8 @@ if __name__ == "__main__":
     print(f"共获取 {len(all_items)} 条商品")
 
     # 过滤新商品
-    seen_ids = load_seen_ids()
-    new_items = [item for item in all_items if item["itemId"] not in seen_ids]
+    seen_dict = load_seen_ids()
+    new_items = [item for item in all_items if item["itemId"] not in seen_dict]
     print(f"其中新商品 {len(new_items)} 条")
 
     if new_items and dingtalk_webhook and dingtalk_secret:
@@ -225,7 +234,8 @@ if __name__ == "__main__":
     else:
         print("没有新商品")
 
-    # 更新已见ID
+    # 更新已见ID（带时间戳）
+    now = time.time()
     for item in all_items:
-        seen_ids.add(item["itemId"])
-    save_seen_ids(seen_ids)
+        seen_dict[item["itemId"]] = now
+    save_seen_ids(seen_dict)
