@@ -155,6 +155,83 @@ def send_dingtalk(webhook_url, secret, title, content):
     print(f"  钉钉响应: {resp.text}")
 
 
+# 关键词白名单，命中任一即保留给 AI 判断
+KEYWORDS = [
+    "预约", "代抢", "代拍", "代购", "代跑", "代办", "代订", "代排",
+    "抢购", "秒杀", "脚本", "自动化", "外挂", "辅助", "定制", "开发",
+    "接单", "门票", "车票", "挂号", "取号", "排队", "黄牛",
+    "签证", "代签", "代约", "代订票", "代注册", "代做", "代写",
+    "爬虫", "逆向", "破解", "接口", "数据采集", "批量",
+]
+
+
+def keyword_filter(items):
+    """关键词预过滤，只保留标题命中关键词的商品"""
+    matched = []
+    for item in items:
+        title = item.get("title", "")
+        if any(kw in title for kw in KEYWORDS):
+            matched.append(item)
+    return matched
+
+
+def ai_filter(items, api_key):
+    """调用 DeepSeek 批量判断商品是否值得推送"""
+    if not items:
+        return []
+
+    # 构造精简的商品列表给 AI
+    items_for_ai = []
+    for item in items:
+        items_for_ai.append({
+            "id": item["itemId"],
+            "title": item["title"],
+            "price": item["price"],
+            "wantCount": item["wantCount"],
+        })
+
+    prompt = f"""你是一个闲鱼商品筛选助手。请判断以下商品中，哪些属于"能赚钱的服务类商品"。
+
+筛选标准：
+- 预约服务（门票预约、挂号预约、车辆预约、景区预约等）
+- 代跑/代办服务（代抢、代拍、代排队、代注册等）
+- 抢购服务（限量商品抢购、秒杀服务等）
+- 脚本/自动化定制（爬虫、自动化工具、脚本开发、数据采集等）
+- 技术服务（接口对接、逆向、破解等技术外包）
+
+不要选择：普通二手商品、实物转让、课程资料、虚拟账号、游戏账号
+
+请只返回符合条件的商品ID列表，JSON格式：{{"ids": ["id1", "id2", ...]}}
+如果没有符合条件的商品，返回：{{"ids": []}}
+
+商品列表：
+{json.dumps(items_for_ai, ensure_ascii=False)}"""
+
+    try:
+        resp = requests.post(
+            "https://api.deepseek.com/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "deepseek-chat",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "response_format": {"type": "json_object"}
+            },
+            timeout=30
+        )
+        result = resp.json()
+        content = result["choices"][0]["message"]["content"]
+        selected_ids = json.loads(content).get("ids", [])
+        print(f"  DeepSeek 筛选出 {len(selected_ids)} 条值得推送的商品")
+        return [item for item in items if item["itemId"] in selected_ids]
+    except Exception as e:
+        print(f"  DeepSeek 调用失败: {e}，跳过 AI 筛选，直接推送关键词匹配结果")
+        return items
+
+
 if __name__ == "__main__":
     # 定时触发时随机延迟1-60分钟，手动触发跳过
     if os.environ.get("SCHEDULED") == "true":
@@ -175,6 +252,7 @@ if __name__ == "__main__":
 
     dingtalk_webhook = os.environ.get("DINGTALK_WEBHOOK", "")
     dingtalk_secret = os.environ.get("DINGTALK_SECRET", "")
+    deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "")
 
     all_items = []
     total_pages = 3
@@ -208,11 +286,30 @@ if __name__ == "__main__":
     new_items = [item for item in all_items if item["itemId"] not in seen_dict]
     print(f"其中新商品 {len(new_items)} 条")
 
-    if new_items and dingtalk_webhook and dingtalk_secret:
+    # 两层筛选：关键词匹配的直接推送，剩余的交给 AI 判断
+    if new_items:
+        kw_matched = keyword_filter(new_items)
+        kw_matched_ids = {item["itemId"] for item in kw_matched}
+        print(f"关键词匹配 {len(kw_matched)} 条")
+
+        # 关键词未命中的商品交给 AI 判断
+        remaining = [item for item in new_items if item["itemId"] not in kw_matched_ids]
+        if remaining and deepseek_key:
+            ai_matched = ai_filter(remaining, deepseek_key)
+        else:
+            ai_matched = []
+
+        # 合并：关键词命中 + AI 筛选通过
+        push_items = kw_matched + ai_matched
+        print(f"最终推送 {len(push_items)} 条")
+    else:
+        push_items = []
+
+    if push_items and dingtalk_webhook and dingtalk_secret:
         # 钉钉单条消息有长度限制，每10条发一次
-        for i in range(0, len(new_items), 10):
-            batch = new_items[i:i+10]
-            lines = [f"## 闲鱼新商品通知 ({len(batch)}条)\n"]
+        for i in range(0, len(push_items), 10):
+            batch = push_items[i:i+10]
+            lines = [f"## 闲鱼服务商品通知 ({len(batch)}条)\n"]
             for item in batch:
                 lines.append(f"**{item['title'][:40]}**\n")
                 lines.append(f"- 价格: {item['price']}元 | 城市: {item['city']}")
@@ -222,17 +319,17 @@ if __name__ == "__main__":
                     lines.append(f"- ![商品图]({item['picUrl']})\n")
                 else:
                     lines.append("")
-            send_dingtalk(dingtalk_webhook, dingtalk_secret, "闲鱼新商品通知", "\n".join(lines))
-            if i + 10 < len(new_items):
+            send_dingtalk(dingtalk_webhook, dingtalk_secret, "闲鱼服务商品通知", "\n".join(lines))
+            if i + 10 < len(push_items):
                 time.sleep(1)
-        print(f"已推送 {len(new_items)} 条新商品到钉钉")
-    elif new_items:
-        print("未配置钉钉，仅打印新商品：")
-        for item in new_items:
+        print(f"已推送 {len(push_items)} 条服务商品到钉钉")
+    elif push_items:
+        print("未配置钉钉，仅打印筛选结果：")
+        for item in push_items:
             title = item['title'][:40].encode('gbk', errors='replace').decode('gbk', errors='replace')
             print(f"  {title} | {item['price']}元 | {item['city']}")
     else:
-        print("没有新商品")
+        print("没有符合条件的服务类商品")
 
     # 更新已见ID（带时间戳）
     now = time.time()

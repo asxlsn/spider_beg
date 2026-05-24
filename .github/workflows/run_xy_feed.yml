@@ -26,6 +26,7 @@ jobs:
           XY_COOKIE: ${{ secrets.XY_COOKIE }}
           DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
           DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           SCHEDULED: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
         run: python xy_feed.py
 
