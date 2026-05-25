@@ -85,33 +85,48 @@ def build_feed_request(cookies, page_number=1, page_size=30):
 def update_cookies_from_response(cookies, resp):
     """从响应的 Set-Cookie 中提取新的 _m_h5_tk 和 _m_h5_tk_enc"""
     for key in ("_m_h5_tk", "_m_h5_tk_enc"):
-        if key in resp.cookies:
-            cookies[key] = resp.cookies[key]
+        val = resp.cookies.get(key)
+        if val:
+            cookies[key] = val
 
 
 def fetch_feed(cookies, page_number=1, page_size=30):
     """获取闲鱼首页推荐 feed，自动处理 token 过期（两次请求机制）"""
     url = "https://h5api.m.goofish.com/h5/mtop.taobao.idlehome.home.webpc.feed/1.0/"
 
+    session = curl_requests.Session(impersonate="chrome")
+    session.cookies.update(cookies)
+    session.headers.update(headers)
+
     params, post_data = build_feed_request(cookies, page_number, page_size)
-    resp = curl_requests.post(url, headers=headers, cookies=cookies, params=params, data=post_data, impersonate="chrome")
+    resp = session.post(url, params=params, data=post_data)
 
     result = resp.json()
     ret = result.get("ret", [])
 
     # token 过期或缺失时，服务器返回错误但会在 Set-Cookie 中下发新 token
+    # Session 会自动合并 Set-Cookie，从 session 中取最新 token 重新签名
     token_expired = any("TOKEN_EXOIRED" in r or "TOKEN_EMPTY" in r for r in ret)
     if token_expired:
         print("  token 过期/缺失，使用服务器下发的新 token 重试...")
-        update_cookies_from_response(cookies, resp)
+        # 从 session 中读取服务器下发的新 token
+        new_tk = session.cookies.get("_m_h5_tk")
+        if new_tk:
+            cookies["_m_h5_tk"] = new_tk
+        new_enc = session.cookies.get("_m_h5_tk_enc")
+        if new_enc:
+            cookies["_m_h5_tk_enc"] = new_enc
 
         # 用新 token 重新构造请求
         params, post_data = build_feed_request(cookies, page_number, page_size)
-        resp = curl_requests.post(url, headers=headers, cookies=cookies, params=params, data=post_data, impersonate="chrome")
+        resp = session.post(url, params=params, data=post_data)
         result = resp.json()
 
-    # 无论是否重试，都更新 cookie 中的 token（保持最新）
-    update_cookies_from_response(cookies, resp)
+    # 无论是否重试，都同步 session 中最新的 token 回 cookies dict
+    for key in ("_m_h5_tk", "_m_h5_tk_enc"):
+        val = session.cookies.get(key)
+        if val:
+            cookies[key] = val
     return result
 
 
