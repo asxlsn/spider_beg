@@ -82,51 +82,68 @@ def build_feed_request(cookies, page_number=1, page_size=30):
     return params, post_data
 
 
-def update_cookies_from_response(cookies, resp):
-    """从响应的 Set-Cookie 中提取新的 _m_h5_tk 和 _m_h5_tk_enc"""
+def extract_cookies_from_headers(resp):
+    """从响应头的 Set-Cookie 中提取 _m_h5_tk 和 _m_h5_tk_enc"""
+    extracted = {}
+    set_cookie_headers = resp.headers.get("set-cookie", "")
+    # curl_cffi 可能返回多个 set-cookie 合并为一个字符串，也可能在 headers 中有多个
+    # 尝试从 headers 对象获取所有 set-cookie
+    cookie_strings = []
+    if hasattr(resp.headers, 'get_list'):
+        cookie_strings = resp.headers.get_list("set-cookie")
+    elif set_cookie_headers:
+        cookie_strings = [set_cookie_headers]
+
+    # 也尝试从 resp.cookies 获取
     for key in ("_m_h5_tk", "_m_h5_tk_enc"):
-        val = resp.cookies.get(key)
-        if val:
-            cookies[key] = val
+        try:
+            val = resp.cookies.get(key)
+            if val:
+                extracted[key] = val
+        except Exception:
+            pass
+
+    # 从 Set-Cookie 头手动解析
+    for cookie_str in cookie_strings:
+        for part in cookie_str.split(","):
+            part = part.strip()
+            if part.startswith("_m_h5_tk="):
+                extracted["_m_h5_tk"] = part.split(";")[0].split("=", 1)[1]
+            elif part.startswith("_m_h5_tk_enc="):
+                extracted["_m_h5_tk_enc"] = part.split(";")[0].split("=", 1)[1]
+
+    return extracted
 
 
 def fetch_feed(cookies, page_number=1, page_size=30):
     """获取闲鱼首页推荐 feed，自动处理 token 过期（两次请求机制）"""
     url = "https://h5api.m.goofish.com/h5/mtop.taobao.idlehome.home.webpc.feed/1.0/"
 
-    session = curl_requests.Session(impersonate="chrome")
-    session.cookies.update(cookies)
-    session.headers.update(headers)
-
     params, post_data = build_feed_request(cookies, page_number, page_size)
-    resp = session.post(url, params=params, data=post_data)
+    resp = curl_requests.post(url, headers=headers, cookies=cookies, params=params, data=post_data, impersonate="chrome")
 
     result = resp.json()
     ret = result.get("ret", [])
 
     # token 过期或缺失时，服务器返回错误但会在 Set-Cookie 中下发新 token
-    # Session 会自动合并 Set-Cookie，从 session 中取最新 token 重新签名
     token_expired = any("TOKEN_EXOIRED" in r or "TOKEN_EMPTY" in r for r in ret)
     if token_expired:
-        print("  token 过期/缺失，使用服务器下发的新 token 重试...")
-        # 从 session 中读取服务器下发的新 token
-        new_tk = session.cookies.get("_m_h5_tk")
-        if new_tk:
-            cookies["_m_h5_tk"] = new_tk
-        new_enc = session.cookies.get("_m_h5_tk_enc")
-        if new_enc:
-            cookies["_m_h5_tk_enc"] = new_enc
+        new_cookies = extract_cookies_from_headers(resp)
+        print(f"  token 过期/缺失，服务器下发新 token: {list(new_cookies.keys())}")
+        cookies.update(new_cookies)
 
-        # 用新 token 重新构造请求
+        # 用新 token 重新构造请求并重试
         params, post_data = build_feed_request(cookies, page_number, page_size)
-        resp = session.post(url, params=params, data=post_data)
+        resp = curl_requests.post(url, headers=headers, cookies=cookies, params=params, data=post_data, impersonate="chrome")
         result = resp.json()
 
-    # 无论是否重试，都同步 session 中最新的 token 回 cookies dict
-    for key in ("_m_h5_tk", "_m_h5_tk_enc"):
-        val = session.cookies.get(key)
-        if val:
-            cookies[key] = val
+        # 重试后再次提取可能更新的 cookie
+        new_cookies = extract_cookies_from_headers(resp)
+        cookies.update(new_cookies)
+    else:
+        new_cookies = extract_cookies_from_headers(resp)
+        cookies.update(new_cookies)
+
     return result
 
 
