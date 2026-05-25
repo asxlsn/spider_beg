@@ -258,9 +258,9 @@ def ai_filter(items, api_key):
 
 
 if __name__ == "__main__":
-    # 定时触发时随机延迟1-60分钟，手动触发跳过
+    # 定时触发时随机延迟5-10分钟，手动触发跳过
     if os.environ.get("SCHEDULED") == "true":
-        delay = random.randint(60, 3600)
+        delay = random.randint(300, 600)
         print(f"随机延迟 {delay} 秒后执行...")
         time.sleep(delay)
 
