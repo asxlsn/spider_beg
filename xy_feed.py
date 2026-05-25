@@ -5,6 +5,7 @@ import random
 import os
 import hmac as hmac_mod
 import requests
+from curl_cffi import requests as curl_requests
 from urllib.parse import quote_plus
 import base64
 
@@ -93,7 +94,7 @@ def fetch_feed(cookies, page_number=1, page_size=30):
     url = "https://h5api.m.goofish.com/h5/mtop.taobao.idlehome.home.webpc.feed/1.0/"
 
     params, post_data = build_feed_request(cookies, page_number, page_size)
-    resp = requests.post(url, headers=headers, cookies=cookies, params=params, data=post_data)
+    resp = curl_requests.post(url, headers=headers, cookies=cookies, params=params, data=post_data, impersonate="chrome")
 
     result = resp.json()
     ret = result.get("ret", [])
@@ -106,7 +107,7 @@ def fetch_feed(cookies, page_number=1, page_size=30):
 
         # 用新 token 重新构造请求
         params, post_data = build_feed_request(cookies, page_number, page_size)
-        resp = requests.post(url, headers=headers, cookies=cookies, params=params, data=post_data)
+        resp = curl_requests.post(url, headers=headers, cookies=cookies, params=params, data=post_data, impersonate="chrome")
         result = resp.json()
 
     # 无论是否重试，都更新 cookie 中的 token（保持最新）
