@@ -1,9 +1,6 @@
 name: Run xy_feed
 
 on:
-  schedule:
-    # 每2小时运行一次（错开整点）
-    - cron: '13 */2 * * *'
   workflow_dispatch:
 
 jobs:
@@ -39,3 +36,4 @@ jobs:
             git commit -m "update xy_seen_ids"
             git push
           fi
+
